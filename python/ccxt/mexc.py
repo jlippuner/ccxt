@@ -42,7 +42,7 @@ class mexc(Exchange):
                 'option': False,
                 'addMargin': True,
                 'cancelAllOrders': True,
-                'cancelOrder': True,
+                'cancelOrder': False, # doesn't work for contracts
                 'createMarketOrder': False,
                 'createOrder': True,
                 'createReduceOnlyOrder': False,
@@ -2132,7 +2132,13 @@ class mexc(Exchange):
         #         "code": 0
         #     }
         #
-        id = self.safe_string_2(order, 'data', 'id')
+        # id = self.safe_string_2(order, 'data', 'id')
+        is_swap = market is not None and market['swap']
+
+        if is_swap:
+            id = self.safe_string(order, 'orderId')
+        else:
+            id = self.safe_string_2(order, 'data', 'id')
         status = None
         if id is None:
             keys = list(order.keys())
@@ -2144,9 +2150,20 @@ class mexc(Exchange):
         timestamp = self.safe_integer_2(order, 'create_time', 'createTime')
         price = self.safe_string(order, 'price')
         amount = self.safe_string_2(order, 'quantity', 'vol')
-        remaining = self.safe_string(order, 'remain_quantity')
         filled = self.safe_string_2(order, 'deal_quantity', 'dealVol')
-        cost = self.safe_string(order, 'deal_amount')
+        average = self.safe_string(order, 'dealAvgPrice')
+        if is_swap:
+            if amount is not None and filled is not None:
+                remaining = float(amount) - float(filled)
+            else:
+                remaining = None
+            if average is not None and filled is not None:
+                cost = float(average) * float(filled)
+            else:
+                cost = None
+        else:
+            remaining = self.safe_string(order, 'remain_quantity')
+            cost = self.safe_string(order, 'deal_amount')
         marketId = self.safe_string(order, 'symbol')
         symbol = self.safe_symbol(marketId, market, '_')
         sideCheck = self.safe_integer(order, 'side')
@@ -2200,6 +2217,7 @@ class mexc(Exchange):
             elif rawOrderType == 'IMMEDIATE_OR_CANCEL':
                 orderType = 'limit'
                 timeInForce = 'IOC'
+
         return self.safe_order({
             'id': id,
             'clientOrderId': clientOrderId,
@@ -2214,7 +2232,7 @@ class mexc(Exchange):
             'side': side,
             'price': price,
             'stopPrice': self.safe_string(order, 'triggerPrice'),
-            'average': self.safe_string(order, 'dealAvgPrice'),
+            'average': average,
             'amount': amount,
             'cost': cost,
             'filled': filled,
